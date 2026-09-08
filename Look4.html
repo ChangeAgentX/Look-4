@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a84ff">
+<title>Look 4</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f7;color:#111}
+.app{max-width:520px;margin:auto;min-height:100vh;padding:24px 18px 40px}
+h1{font-size:36px;margin:12px 0 4px} .tag{color:#666;margin:0 0 28px;font-size:16px}
+button,.button{width:100%;border:0;border-radius:18px;padding:19px 16px;font-size:18px;font-weight:650;margin:8px 0;cursor:pointer}
+.primary{background:#0a84ff;color:white}.secondary{background:white;color:#111;border:1px solid #ddd}
+.card{background:white;border-radius:20px;padding:18px;margin:12px 0;box-shadow:0 2px 12px #0000000b}
+.hidden{display:none!important}.back{background:none;width:auto;padding:6px 0;margin:0;color:#0a84ff;font-size:16px}
+label{display:block;font-weight:650;margin:18px 0 7px}input{width:100%;padding:15px;border:1px solid #ccc;border-radius:14px;font-size:17px}
+img{max-width:100%;border-radius:16px;display:block}.result{display:flex;gap:14px;align-items:center}.thumb{width:92px;height:92px;object-fit:cover;flex:none}.loc{color:#555;margin-top:5px}.muted{color:#777}.danger{color:#c00;background:#fff0f0}
+.top{display:flex;align-items:center;justify-content:space-between}.small{font-size:14px}
+#cameraInput{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <section id="home">
+    <h1>Look 4</h1><p class="tag">Never forget where you put it.</p>
+    <button class="primary" onclick="startAdd()">📷 Put Something Away</button>
+    <button class="secondary" onclick="showSearch()">🔍 Find Something</button>
+    <button class="secondary" onclick="showSettings()">⚙️ Settings</button>
+  </section>
+
+  <section id="add" class="hidden">
+    <button class="back" onclick="goHome()">← Home</button><h2>Put Something Away</h2>
+    <div id="photoArea" class="card">
+      <p><b>Step 1</b> — Take a photo of the item or where it is stored.</p>
+      <button class="primary" onclick="document.getElementById('cameraInput').click()">📷 Take Photo</button>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment">
+      <img id="preview" class="hidden">
+    </div>
+    <div class="card">
+      <label>What is it?</label><input id="itemName" placeholder="e.g. Drill machine">
+      <label>Where did you put it?</label><input id="itemLocation" placeholder="e.g. Tool box — Shelf #1">
+      <button class="primary" onclick="saveItem()">SAVE</button>
+    </div>
+  </section>
+
+  <section id="search" class="hidden">
+    <button class="back" onclick="goHome()">← Home</button><h2>Find Something</h2>
+    <input id="query" placeholder="🔍 What are you looking for?" oninput="renderResults()">
+    <div id="results"></div>
+  </section>
+
+  <section id="detail" class="hidden">
+    <button class="back" onclick="showSearch()">← Search</button>
+    <div id="detailCard"></div>
+  </section>
+
+  <section id="settings" class="hidden">
+    <button class="back" onclick="goHome()">← Home</button><h2>Settings</h2>
+    <div class="card">
+      <p><b>Offline storage</b></p>
+      <p class="muted">Your Look 4 items and photos are stored locally on this device in this prototype. Internet is not required after the app has been installed/loaded.</p>
+      <button class="secondary" onclick="exportData()">Export backup</button>
+      <button class="secondary danger" onclick="clearAll()">Delete all items</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const DB_NAME='look4-db', STORE='items';
+let db, currentPhoto=null, items=[];
+
+function openDB(){
+ return new Promise((resolve,reject)=>{
+  const r=indexedDB.open(DB_NAME,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});
+  r.onsuccess=()=>{db=r.result;loadItems().then(resolve)};
+  r.onerror=()=>reject(r.error);
+ });
+}
+function loadItems(){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readonly'), req=tx.objectStore(STORE).getAll();
+  req.onsuccess=()=>{items=req.result;resolve(items)}; req.onerror=()=>reject(req.error);
+ });
+}
+function put(item){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'), req=tx.objectStore(STORE).put(item);
+  req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error);
+ });
+}
+function del(id){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'), req=tx.objectStore(STORE).delete(id);
+  req.onsuccess=()=>resolve(); req.onerror=()=>reject(req.error);
+ });
+}
+function hideAll(){document.querySelectorAll('section').forEach(s=>s.classList.add('hidden'))}
+function goHome(){hideAll();document.getElementById('home').classList.remove('hidden')}
+function startAdd(){
+ hideAll();document.getElementById('add').classList.remove('hidden');
+ currentPhoto=null; document.getElementById('preview').classList.add('hidden');
+ document.getElementById('itemName').value='';document.getElementById('itemLocation').value='';
+}
+document.getElementById('cameraInput').addEventListener('change',e=>{
+ const f=e.target.files[0]; if(!f)return;
+ currentPhoto=f;
+ const p=document.getElementById('preview');p.src=URL.createObjectURL(f);p.classList.remove('hidden');
+});
+async function saveItem(){
+ const name=document.getElementById('itemName').value.trim(), loc=document.getElementById('itemLocation').value.trim();
+ if(!currentPhoto)return alert('Please take a photo first.');
+ if(!name||!loc)return alert('Please enter the item name and location.');
+ const id=await put({name,location:loc,photo:currentPhoto,date:new Date().toISOString()});
+ await loadItems(); alert('Saved ✓'); goHome();
+}
+function showSearch(){hideAll();document.getElementById('search').classList.remove('hidden');document.getElementById('query').value='';renderResults()}
+function score(item,q){
+ const n=item.name.toLowerCase(), l=item.location.toLowerCase();
+ if(!q)return 0; if(n===q)return 100; if(n.startsWith(q))return 80; if(n.includes(q))return 60; if(l.includes(q))return 20; return 0;
+}
+function renderResults(){
+ const q=document.getElementById('query').value.trim().toLowerCase(), box=document.getElementById('results');
+ if(!q){box.innerHTML='<p class="muted">Type an item name, such as “drill”.</p>';return}
+ const found=items.map(x=>({...x,s:score(x,q)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);
+ box.innerHTML=found.length?found.map(x=>`<div class="card result" onclick="showDetail(${x.id})"><img class="thumb" src="${URL.createObjectURL(x.photo)}"><div><b>${esc(x.name)}</b><div class="loc">📍 ${esc(x.location)}</div></div></div>`).join(''):'<p class="muted">Nothing found.</p>';
+}
+async function showDetail(id){
+ const x=items.find(i=>i.id===id); if(!x)return;
+ hideAll();document.getElementById('detail').classList.remove('hidden');
+ document.getElementById('detailCard').innerHTML=`<div class="card"><img src="${URL.createObjectURL(x.photo)}"><h2>${esc(x.name)}</h2><p class="loc">📍 <b>${esc(x.location)}</b></p><p class="small muted">Saved ${new Date(x.date).toLocaleDateString()}</p><button class="secondary" onclick="editItem(${x.id})">EDIT</button><button class="secondary danger" onclick="deleteItem(${x.id})">DELETE</button></div>`;
+}
+async function deleteItem(id){if(confirm('Delete this item?')){await del(id);await loadItems();showSearch()}}
+function editItem(id){
+ const x=items.find(i=>i.id===id); if(!x)return; startAdd();
+ document.getElementById('itemName').value=x.name;document.getElementById('itemLocation').value=x.location;
+ const p=document.getElementById('preview');p.src=URL.createObjectURL(x.photo);p.classList.remove('hidden');currentPhoto=x.photo;
+ const b=document.querySelector('#add .primary:last-of-type');b.textContent='UPDATE';b.onclick=async()=>{x.name=document.getElementById('itemName').value.trim();x.location=document.getElementById('itemLocation').value.trim();x.photo=currentPhoto;await put(x);await loadItems();goHome();};
+}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function showSettings(){hideAll();document.getElementById('settings').classList.remove('hidden')}
+async function exportData(){
+ const payload=items.map(x=>({name:x.name,location:x.location,date:x.date}));
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='look4-backup.json';a.click();
+}
+async function clearAll(){if(confirm('Delete every saved Look 4 item?')){const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>{items=[];goHome()}}}
+openDB();
+</script>
+</body>
+</html>
